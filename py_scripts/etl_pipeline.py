@@ -1,7 +1,6 @@
 import pandas as pd
 import logging
 import os
-import sys
 from sqlalchemy import text
 
 from .file_utils import (
@@ -9,7 +8,6 @@ from .file_utils import (
 )
 from .db_utils import get_engine, get_connection
 from .db_manager import DBManager
-from .data_validation import DataValidator
 from .load_config import load_config
 
 
@@ -20,30 +18,12 @@ class ETLPipeline:
         self.config = load_config(config_path)
         self.engine = get_engine(self.config)
         self.db_manager = DBManager(self.config)
-        self.validator = DataValidator()
-        self.setup_logging()
-
-    def setup_logging(self):
-        """Настройка логирования"""
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler('etl_pipeline.log', encoding='utf-8'),
-                logging.StreamHandler()
-            ]
-        )
 
     def process_date(self, date_str):
         """
         Основной метод обработки данных за указанную дату
-
-        Args:
-            date_str (str): Дата в формате DDMMYYYY (уже нормализованная)
         """
         logging.info(f"Начинаю обработку данных за дату: {date_str}")
-
-        # Дата уже нормализована в main.py, дополнительная валидация не нужна
 
         # Получение файлов для указанной даты
         files = get_files_by_date(self.config['paths']['files_dir'], date_str)
@@ -51,14 +31,13 @@ class ETLPipeline:
         if not any(files.values()):
             message = f"Не найдены файлы для даты {date_str}"
             logging.warning(message)
-            raise FileNotFoundError()
+            raise FileNotFoundError(message)
 
         # Обработка каждого типа файлов
         try:
             # 0. Инициализация БД и очистка staging
             with get_connection(self.config) as conn:
                 self.db_manager.ensure_database_ready(conn)
-                # self.db_manager.cleanup_staging(conn) # убрали т.к. реплейс указан для загрузки новых
             
             # 1. Загрузка транзакций
             if files['transactions']:
@@ -126,79 +105,21 @@ class ETLPipeline:
         """Обработка файла транзакций"""
         logging.info(f"Обработка транзакций из файла: {file_path}")
 
-        # Загрузка данных
         df = load_file_to_df(file_path, "txt")
-
-        # # Валидация
-        # if not self.validator.validate_transactions(df):
-        #     errors = self.validator.get_errors()
-        #     raise ValueError(f"Ошибки валидации транзакций: {errors}")
-
-        # # Преобразование поля amount: замена запятой на точку и 
-        # # конвертация в numeric
-        # if 'amount' in df.columns:
-        #     df['amount'] = (df['amount'].astype(str)
-        #                     .str.replace(',', '.')
-        #                     .astype(float))
-        #     logging.info("Выполнено преобразование поля amount: "
-        #                  "запятая -> точка")
-
-        # # Очистка staging таблицы уже выполнена в DBManager.cleanup_staging()
-
-        # Загрузка в staging
         return self._create_temp_table(df, file_path)
 
     def _process_blacklist(self, file_path):
         """Обработка файла черного списка паспортов"""
         logging.info(f"Обработка черного списка из файла: {file_path}")
 
-        # Загрузка данных
         df = load_file_to_df(file_path, "xlsx")
-
-        # # Валидация
-        # if not self.validator.validate_blacklist(df):
-        #     errors = self.validator.get_errors()
-        #     raise ValueError(f"Ошибки валидации черного списка: {errors}")
-
-        # # Маппинг полей: date -> entry_dt и изменение порядка колонок
-        # df = df.rename(columns={'date': 'entry_dt'})
-        # # Изменяем порядок колонок: сначала passport, потом entry_dt (как в БД)
-        # df = df[['passport', 'entry_dt']]
-        # logging.info("Выполнен маппинг полей: date -> entry_dt и "
-        #              "изменен порядок колонок")
-
-        # # Очистка staging таблицы уже выполнена в DBManager.cleanup_staging()
-
-        # Загрузка в staging
-        # df.to_sql(
-        #     'stg_passport_blacklist', self.engine, if_exists='replace',
-        #     index=False, schema='bank'
-        # )
-
-        # logging.info(f"Загружено {len(df)} записей в черный список")
         return self._create_temp_table(df, file_path)
 
     def _process_terminals(self, file_path):
         """Обработка файла терминалов"""
         logging.info(f"Обработка терминалов из файла: {file_path}")
 
-        # Загрузка данных
         df = load_file_to_df(file_path, "xlsx")
-
-        # # Валидация
-        # if not self.validator.validate_terminals(df):
-        #     errors = self.validator.get_errors()
-        #     raise ValueError(f"Ошибки валидации терминалов: {errors}")
-
-        # # Очистка staging таблицы уже выполнена в DBManager.cleanup_staging()
-
-        # Загрузка в staging
-        # df.to_sql(
-        #     'stg_terminals', self.engine, if_exists='replace', 
-        #     index=False, schema='bank'
-        # )
-
-        # logging.info(f"Загружено {len(df)} терминалов")
         return self._create_temp_table(df, file_path)
 
     def _log_meta_load(self, date_str, file_type, file_name, records_loaded, status, error_message=None):
@@ -238,33 +159,6 @@ class ETLPipeline:
     def _load_dimensions(self, date_str):
         """Загрузка измерений с использованием SCD2"""
         logging.info("Начинаю загрузку измерений")
-
-        # Инициализация измерений из существующих данных (если таблицы пустые)
-        # init_script = os.path.join(
-        #     self.config['paths']['dml_sql'], 'init_dimensions.sql'
-        # )
-        # if os.path.exists(init_script):
-        #     with self.engine.connect() as conn:
-        #         # Проверяем, есть ли уже данные в измерениях
-        #         result = conn.execute(
-        #             text("SELECT COUNT(*) FROM bank.dwh_dim_clients_hist")
-        #         )
-        #         count = result.scalar()
-
-        #         if count == 0:
-        #             logging.info(
-        #                 "Инициализация измерений из существующих данных"
-        #             )
-        #             with open(init_script, 'r', encoding='utf-8') as f:
-        #                 sql = f.read()
-        #                 conn.execute(text(sql))
-        #                 conn.commit()
-        #             logging.info("Измерения инициализированы")
-        #         else:
-        #             logging.info(
-        #                 f"В измерениях уже есть {count} записей, "
-        #                 f"инициализация пропущена"
-        #             )
 
         # Загрузка терминалов (SCD2)
         sql_script = os.path.join(

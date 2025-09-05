@@ -110,8 +110,7 @@ def main():
         print("ОТЧЕТ ПО МОШЕННИЧЕСТВУ")
         print("=" * 60)
         
-        # fraud_report = etl.get_fraud_report(date_str)
-        fraud_report = None
+        fraud_report = etl.get_fraud_report(date_str)
         
         if not fraud_report.empty:
             print(f"Найдено {len(fraud_report)} случаев мошенничества:")
@@ -122,16 +121,16 @@ def main():
             for fraud_type, count in fraud_types.items():
                 print(f"{fraud_type}: {count}")
             
-            print("\nПодробная информация:")
-            print("-" * 60)
+            # print("\nПодробная информация:")
+            # print("-" * 60)
             
             # Вывод детальной информации
-            for _, row in fraud_report.iterrows():
-                print(f"Время: {row['event_dt']}")
-                print(f"Паспорт: {row['passport']}")
-                print(f"ФИО: {row['fio']}")
-                print(f"Тип: {row['event_type']}")
-                print("-" * 30)
+            # for _, row in fraud_report.iterrows():
+            #     print(f"Время: {row['event_dt']}")
+            #     print(f"Паспорт: {row['passport']}")
+            #     print(f"ФИО: {row['fio']}")
+            #     print(f"Тип: {row['event_type']}")
+            #     print("-" * 30)
         else:
             print("Случаев мошенничества не найдено")
         

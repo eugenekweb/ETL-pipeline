@@ -64,15 +64,6 @@ def normalize_date(date_str: str) -> str:
     - DD-MM-YYYY, DD.MM.YYYY, DD/MM/YYYY
     - DD-MM-YY, DD.MM.YY, DD/MM/YY (YY преобразуется в 20YY)
     - DDMMYYYY (без изменений)
-    
-    Args:
-        date_str (str): Дата в любом поддерживаемом формате
-        
-    Returns:
-        str: Дата в формате DDMMYYYY
-        
-    Raises:
-        ValueError: Если формат даты не поддерживается
     """
     # Убираем все пробелы
     date_str = date_str.strip()
@@ -116,29 +107,3 @@ def normalize_date(date_str: str) -> str:
     
     raise ValueError(f"Неподдерживаемый формат даты: {date_str}. "
                     f"Используйте DD-MM-YYYY, DD.MM.YYYY, DD/MM/YYYY или DDMMYYYY")
-
-
-def validate_date_format(date_str: str) -> bool:
-    """
-    Проверяет корректность формата даты DDMMYYYY
-    
-    Args:
-        date_str (str): Строка с датой
-        
-    Returns:
-        bool: True если формат корректен
-    """
-    if len(date_str) != 8:
-        return False
-    
-    try:
-        day = int(date_str[:2])
-        month = int(date_str[2:4])
-        year = int(date_str[4:])
-        
-        if day < 1 or day > 31 or month < 1 or month > 12 or year < 2000:
-            return False
-            
-        return True
-    except ValueError:
-        return False

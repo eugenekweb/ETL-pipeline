@@ -21,32 +21,7 @@ class DBManager:
         except Exception as e:
             self.logger.error(f"Ошибка при инициализации БД: {str(e)}")
             raise
-            
-    # def cleanup_staging(self, connection): # kill
-    #     """Очистка staging-таблиц с возможностью отката"""
-    #     try:
-    #         # Начинаем транзакцию
-    #         cursor = connection.cursor()
-    #         cursor.execute("BEGIN")
-            
-    #         # Очищаем staging-таблицы
-    #         staging_tables = [
-    #             'stg_transactions_temp', 
-    #             'stg_passport_blacklist_temp', 
-    #             'stg_terminals_temp'
-    #         ]
-    #         for table in staging_tables:
-    #             cursor.execute(f"DELETE FROM bank.{table}")
-                    
-    #         # Фиксируем изменения
-    #         connection.commit()
-            
-    #     except Exception as e:
-    #         # Откатываем изменения при ошибке
-    #         connection.rollback()
-    #         self.logger.error(f"Ошибка при очистке staging-таблиц: {str(e)}")
-    #         raise
-            
+        
     def _create_schema(self, connection):
         """Создание схемы bank"""
         try:
