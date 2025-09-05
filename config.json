@@ -1,0 +1,15 @@
+{
+    "db": {
+        "dbname": "postgres",
+        "user": "postgres",
+        "password": "111",
+        "host": "localhost",
+        "port": "5432"
+    },
+    "paths": {
+        "files_dir": "files",
+        "archive_dir": "archive",
+        "ddl_sql": "sql_scripts/ddl",
+        "dml_sql": "sql_scripts/dml"
+    }
+}
