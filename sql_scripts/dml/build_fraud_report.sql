@@ -23,11 +23,12 @@ WHERE (
     OR
     -- Подозрительный случай: NULL для людей младше 45 лет на дату транзакции
     (c.passport_valid_to IS NULL AND EXTRACT(YEAR FROM AGE(t.transaction_date::DATE, c.date_of_birth)) < 45)
-  );
+  )
+ON CONFLICT (event_dt, passport, event_type) DO NOTHING;
 
 -- 2. Операции при недействующем договоре
 -- Проверяем транзакции, которые произошли ПОСЛЕ истечения срока действия договора
-INSERT INTO bank.rep_fraud (event_dt, passport, fio, phone, event_type, report_dt)
+INSERT INTO bank.rep_fraud (event_dt, passport, fio, phone, event_type)
 SELECT DISTINCT
     t.transaction_date::TIMESTAMP,
     c.passport_num,
@@ -38,10 +39,11 @@ FROM bank.stg_transactions_temp t
 JOIN bank.cards card ON t.card_num = card.card_num
 JOIN bank.accounts acc ON card.account = acc.account
 JOIN bank.clients c ON acc.client = c.client_id
-WHERE acc.account_valid_to::DATE < t.transaction_date::DATE;
+WHERE acc.valid_to::DATE < t.transaction_date::DATE
+ON CONFLICT (event_dt, passport, event_type) DO NOTHING;
   
 -- 3. Операции в разных городах в течение часа
-INSERT INTO bank.rep_fraud (event_dt, passport, fio, phone, event_type, report_dt)
+INSERT INTO bank.rep_fraud (event_dt, passport, fio, phone, event_type)
 SELECT DISTINCT
     t1.transaction_date::TIMESTAMP,
     c.passport_num,
@@ -61,10 +63,11 @@ WHERE t1.transaction_date::TIMESTAMP < t2.transaction_date::TIMESTAMP
   AND t1.transaction_date::TIMESTAMP BETWEEN term1.effective_from AND term1.effective_to
   AND term1.deleted_flg = 0
   AND t2.transaction_date::TIMESTAMP BETWEEN term2.effective_from AND term2.effective_to
-  AND term2.deleted_flg = 0;
+  AND term2.deleted_flg = 0
+ON CONFLICT (event_dt, passport, event_type) DO NOTHING;
 
--- -- 4. Попытка подбора суммы
--- INSERT INTO bank.rep_fraud (event_dt, passport, fio, phone, event_type, report_dt)
+-- 4. Попытка подбора суммы
+-- INSERT INTO bank.rep_fraud (event_dt, passport, fio, phone, event_type)
 -- WITH rejected_transactions AS (
 --     SELECT 
 --         t.card_num,

@@ -64,15 +64,15 @@ class ETLPipeline:
             self._upsert_last_update('dwh_fact_passport_blacklist', 'facts')
 
             # 6. Построение витрины мошенничества
-            # self._build_fraud_report()
-            # self._upsert_last_update('rep_fraud', 'report')
+            self._build_fraud_report()
+            self._upsert_last_update('rep_fraud', 'report')
 
             # # 7. Архивирование файлов
             # self._archive_files(files)
 
-            # logging.info(
-            #     f"Обработка данных за дату {date_str} завершена успешно"
-            # )
+            logging.info(
+                f"Обработка данных за дату {date_str} завершена успешно"
+            )
 
         except Exception as e:
             logging.error(
