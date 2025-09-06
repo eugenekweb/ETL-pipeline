@@ -67,48 +67,60 @@ WHERE t1.transaction_date::TIMESTAMP < t2.transaction_date::TIMESTAMP
 ON CONFLICT (event_dt, passport, event_type) DO NOTHING;
 
 -- 4. Попытка подбора суммы
--- INSERT INTO bank.rep_fraud (event_dt, passport, fio, phone, event_type)
--- WITH rejected_transactions AS (
---     SELECT 
---         t.card_num,
---         t.transaction_date,
---         t.amount,
---         ROW_NUMBER() OVER (PARTITION BY t.card_num ORDER BY t.transaction_date) as rn
---     FROM bank.stg_transactions t
---     WHERE t.oper_result = 'REJECTED'
--- ),
--- fraud_cards AS (
---     SELECT 
---         rt1.card_num,
---         rt1.transaction_date,
---         rt1.amount
---     FROM rejected_transactions rt1
---     JOIN rejected_transactions rt2 ON rt1.card_num = rt2.card_num
---     JOIN rejected_transactions rt3 ON rt1.card_num = rt3.card_num
---     WHERE rt1.rn < rt2.rn 
---       AND rt2.rn < rt3.rn
---       AND rt2.transaction_date <= rt1.transaction_date + INTERVAL '20 minutes'
---       AND rt3.transaction_date <= rt1.transaction_date + INTERVAL '20 minutes'
---       AND rt1.amount > rt2.amount 
---       AND rt2.amount > rt3.amount
--- )
--- SELECT DISTINCT
---     t.transaction_date,
---     c.passport_num,
---     CONCAT(c.last_name, ' ', c.first_name, ' ', c.patronymic) as fio,
---     c.phone,
---     'Попытка подбора суммы' as event_type,
---     CURRENT_TIMESTAMP as report_dt
--- FROM bank.stg_transactions t
--- JOIN fraud_cards fc ON t.card_num = fc.card_num
--- JOIN bank.dwh_dim_cards_hist card ON t.card_num = card.card_num
--- JOIN bank.dwh_dim_accounts_hist acc ON card.account_id = acc.account_id
--- JOIN bank.dwh_dim_clients_hist c ON acc.client_id = c.client_id
--- WHERE t.oper_result = 'SUCCESS'
---   AND t.transaction_date = fc.transaction_date
---   AND t.transaction_date BETWEEN c.effective_from AND c.effective_to
---   AND c.deleted_flg = 0
---   AND t.transaction_date BETWEEN acc.effective_from AND acc.effective_to
---   AND acc.deleted_flg = 0
---   AND t.transaction_date BETWEEN card.effective_from AND card.effective_to
---   AND card.deleted_flg = 0;
+INSERT INTO bank.rep_fraud (event_dt, passport, fio, phone, event_type)
+-- приводим к нужному виду
+WITH transactions AS (
+    SELECT 
+        trans_id AS transaction_id,
+        trans_date AS transaction_date,
+        amt AS amount,
+        card_num,
+        oper_type,
+        oper_result,
+        terminal,
+        ROW_NUMBER() OVER (PARTITION BY card_num ORDER BY trans_date) as rn
+    FROM bank.dwh_fact_transactions
+), -- находим карты и транзакции, которые могут быть мошенническими
+fraud_cards AS (
+    SELECT 
+        t.card_num,
+        t.transaction_date,
+        t.amount,
+        t.oper_result,
+        CASE
+            WHEN 
+                -- проверяем, что предыдущие три транзакции были отклонены
+                LAG(t.oper_result) OVER cards_by_trans_date = 'REJECT'
+                AND LAG(t.oper_result, 2) OVER cards_by_trans_date = 'REJECT'
+                AND LAG(t.oper_result, 3) OVER cards_by_trans_date = 'REJECT'
+                -- проверяем, что предыдущие три транзакции не были депозитами
+                AND LAG(t.oper_type) OVER cards_by_trans_date <> 'DEPOSIT'
+                AND LAG(t.oper_type, 2) OVER cards_by_trans_date <> 'DEPOSIT'
+                AND LAG(t.oper_type, 3) OVER cards_by_trans_date <> 'DEPOSIT'
+                -- проверяем, что текущая транзакция была успешной и не была депозитом
+                AND t.oper_result = 'SUCCESS' AND t.oper_type <> 'DEPOSIT'
+                -- проверяем, что сумма текущей транзакции больше, чем сумма предыдущих трех транзакций
+                AND LAG(t.amount) OVER cards_by_trans_date > amount
+                AND LAG(t.amount, 2) OVER cards_by_trans_date > LAG(t.amount) OVER cards_by_trans_date
+                AND LAG(t.amount, 3) OVER cards_by_trans_date > LAG(t.amount, 2) OVER cards_by_trans_date
+                -- проверяем, что интервал между транзакциями меньше 20 минут
+                AND (t.transaction_date - LAG(t.transaction_date, 2) OVER cards_by_trans_date) < INTERVAL '20 minutes'
+                AND (LAG(t.transaction_date, 2) OVER cards_by_trans_date - LAG(t.transaction_date, 3) OVER cards_by_trans_date) < INTERVAL '20 minutes'
+            THEN TRUE
+            ELSE FALSE
+        END AS rrs
+    FROM transactions t
+    WINDOW cards_by_trans_date AS (PARTITION BY t.card_num ORDER BY t.transaction_date)
+)
+SELECT DISTINCT
+    fc.transaction_date,
+    c.passport_num,
+    CONCAT(c.last_name, ' ', c.first_name, ' ', c.patronymic) as fio,
+    c.phone,
+    'Попытка подбора суммы' as event_type
+FROM fraud_cards fc
+JOIN bank.cards card ON fc.card_num = card.card_num
+JOIN bank.accounts acc ON card.account = acc.account
+JOIN bank.clients c ON acc.client = c.client_id
+WHERE fc.rrs = TRUE
+ON CONFLICT (event_dt, passport, event_type) DO NOTHING;
